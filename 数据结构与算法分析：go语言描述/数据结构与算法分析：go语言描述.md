@@ -1,3 +1,7 @@
+[TOC]
+
+
+
 # 数据结构与算法分析：Go语言描述
 
 手头正好有一本书，《数据结构与算法分析：c++语言描述》，当年学数据结构的时候，真的完全没花心思进去，学出来跟没学一样，所以现在准备重学。
@@ -152,7 +156,7 @@ func (a *ArrayList) Show() {
 
 
 
-## 02.链表
+### 02.链表
 
 在arraylist中元素被排列成一个线性序列，当添加的数据量达到容量值的时候，要进行拷贝。
 
@@ -164,4 +168,321 @@ func (a *ArrayList) Show() {
 2. next，存放一个指针，指出下一个列表元素的节点的位置，如果没有下一个元素，将用一个特殊的nil值
 
 另外，我们需要记录第一个节点的位置，这样我们可以通过这个节点不断向后遍历到链表的所有节点。
+
+
+
+列表基本操作
+
+1. 构造（Construction）
+
+为了构造一个空列表，我们只需简单地把first设为空指针，就可以判断出列表是否为空。
+
+2. 判空(Empty)
+
+判断first是否为空，就可以判断出列表是否为空。
+
+3. 遍历（Traverse）
+
+遍历列表
+
+4. 插入（Insertion）
+5. 删除（Deletion）
+
+
+
+基于go语言的实现
+
+```go
+package linklist
+
+import "fmt"
+
+// Node 单链表的节点
+type Node struct {
+	Element interface{}
+	Next    *Node
+}
+
+// LinkList 单链表类的结构体
+type LinkList struct {
+	Head *Node
+	len  int
+}
+
+// Init 初始化linklist或者清空linklist
+func (l *LinkList) Init() *LinkList {
+	l.Head = nil
+	l.len = 0
+	return l
+}
+
+// New 返回一个初始化的linklist
+func New() *LinkList {
+	return new(LinkList).Init()
+}
+
+// Empty 通过头节点是否为空判断linklist是否为空
+func (l *LinkList) Empty() bool {
+	if l.Head == nil {
+		return true
+	}
+	return false
+}
+
+// Len 获取linklist的节点数目
+func (l *LinkList) Len() int { return l.len }
+
+// Insert 插入某个值，在at节点的后面
+func (l *LinkList) Insert(val interface{}, at *Node) {
+	at.Next.Element = val
+	l.len++
+}
+
+// Append 添加元素在链表的尾部
+func (l *LinkList) Append(val interface{}) {
+	if l.Empty() {
+		l.Head = &Node{val, nil}
+	} else {
+		tmp := l.Head
+		for tmp.Next != nil {
+			tmp = tmp.Next
+		}
+		tmp.Next = &Node{val, nil}
+	}
+	l.len++
+}
+
+// Remove 移除linklist的某个节点
+func (l *LinkList) Remove(at *Node) {
+	if at == nil {
+		return
+	}
+	if at == l.Head {
+		l.Head = l.Head.Next
+	} else {
+		tmp := l.Head
+		for tmp.Next != nil {
+			if tmp.Next == at {
+				tmp.Next = at.Next
+			}
+		}
+	}
+	l.len--
+}
+
+// Traversal 遍历单链表
+func (l *LinkList) Traversal() {
+	tmp := l.Head
+	fmt.Print(tmp.Element)
+	for tmp.Next != nil {
+		tmp = tmp.Next
+		fmt.Print(",", tmp.Element)
+	}
+	fmt.Println()
+}
+
+```
+
+
+
+以上是一个简单链表，除此之外，还有很多变种：循环链表，双向链表，带头结点的链表等
+
+
+
+
+
+基于数组实现链表，我们也可以不适用指针，使用下标来表示下一个节点的位置，实现基于数组的链表。
+
+
+
+
+
+
+
+## 2.栈
+
+### 01.基于线性表的栈
+
+栈是一种LIFO（LAST IN FIRST OUT 后进先出）的数据结构
+
+基本操作
+
+1. 创建一个栈
+2. 检查栈是否为空
+3. push
+4. pop
+5. top：返回栈顶元素
+
+基于go slice实现的栈
+
+```go
+package stack
+
+import (
+	"fmt"
+)
+
+const (
+	// INITCAP 初始容量
+	INITCAP = 10
+)
+
+// Stack 栈类的结构体
+// cap为底层list的容量，top表示栈顶下标，同时也是栈的元素个数
+type Stack struct {
+	list []interface{}
+	cap  int
+	top  int
+}
+
+// Init 初始化栈类，或者清空栈类
+func (s *Stack) Init() *Stack {
+	s.list = make([]interface{}, INITCAP)
+	s.cap = INITCAP
+	s.top = 0
+	return s
+}
+
+// New 返回一个初始化好的栈
+func New() *Stack {
+	return new(Stack).Init()
+}
+
+// Empty 通过判断栈顶下标的位置是否为0，判断栈是否为空
+func (s *Stack) Empty() bool {
+	if s.top == 0 {
+		return true
+	}
+	return false
+}
+
+// 当栈类里面的数组容量不够时，调用这个方法扩容到两倍，原来的数据也会拷贝过去
+func (s *Stack) expandCap() {
+	s.cap *= 2
+	// 创建一个新的切片，每次容量变为两倍
+	newist := make([]interface{}, s.cap)
+	// 将旧list数据全部拷贝到新list
+	copy(newist[:s.top], s.list[:s.top])
+	s.list = newist
+}
+
+// Push 添加元素到栈尾
+func (s *Stack) Push(val interface{}) {
+	if s.top == s.cap {
+		s.expandCap()
+	}
+	s.list[s.top] = val
+	s.top++
+}
+
+// Pop 删除栈顶的一个元素并返回，没有添加错误处理，执行这个操作是要先判断栈是否为空
+func (s *Stack) Pop() interface{} {
+	s.top--
+	return s.list[s.top]
+}
+
+// Top 返回栈顶的元素，如果栈为空，返回nil
+func (s *Stack) Top() interface{} {
+	if s.top == 0 {
+		return nil
+	}
+	return s.list[s.top-1]
+}
+
+// Display 输出栈中的所有元素，栈底到栈顶，从左到右
+func (s *Stack) Display() {
+	for i := 0; i < s.top; i++ {
+		fmt.Print(s.list[i], " ")
+	}
+	fmt.Println()
+}
+
+```
+
+### 02.链式栈
+
+链式栈不需要扩充底层数组扩容，可以充分利用存储空间。
+
+链式栈go语言实现
+
+```go
+package linkstack
+
+import "fmt"
+
+// node 链式栈的节点
+type node struct {
+	value interface{}
+	next  *node
+}
+
+// LinkStack 链式栈的结构体
+type LinkStack struct {
+	top *node
+	len int
+}
+
+// Init 初始化链栈，或者情况链栈
+func (l *LinkStack) Init() *LinkStack {
+	l.top = nil
+	l.len = 0
+	return l
+}
+
+// New 返回一个初始化好的链栈
+func New() *LinkStack {
+	return new(LinkStack).Init()
+}
+
+// Empty 通过判断链栈顶部节点是否为nil，判断链栈是否为空栈
+func (l *LinkStack) Empty() bool {
+	if l.top == nil {
+		return true
+	}
+	return false
+}
+
+// Top 返回链栈顶部节点的值
+func (l *LinkStack) Top() interface{} {
+	return l.top.value
+}
+
+// Push 在链栈的尾部添加元素
+func (l *LinkStack) Push(val interface{}) {
+	if l.top == nil {
+		l.top = &node{val, nil}
+	} else {
+		newNode := &node{val, nil}
+		newNode.next = l.top
+		l.top = newNode
+	}
+	l.len++
+}
+
+// Pop 删除链栈顶部节点，并返回那个节点的值
+func (l *LinkStack) Pop() interface{} {
+	if l.top == nil {
+		panic("error,no nodes in this linkstack")
+	}
+	topVal := l.top.value
+	l.top = l.top.next
+	l.len--
+	return topVal
+
+}
+
+// Display 输出链栈的所有元素，从顶部到底部，从左到右
+func (l *LinkStack) Display() {
+	for l.top.next != nil {
+		fmt.Print(l.top.value, " ")
+		l.top = l.top.next
+	}
+	fmt.Println()
+}
+
+```
+
+
+
+
 

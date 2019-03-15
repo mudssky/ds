@@ -1,7 +1,9 @@
 // Package arraylist 基于go的基础类型切片封装一个arraylist
 package arraylist
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // ListType 用来确定元素类型,interface{}类型可以接受各种类型
 type ListType interface{}
@@ -35,7 +37,6 @@ func New() *ArrayList {
 // GetLen 获取ArrayList当前的元素个数
 func (a *ArrayList) GetLen() int {
 	return a.len
-
 }
 
 func (a *ArrayList) expandCap() {
