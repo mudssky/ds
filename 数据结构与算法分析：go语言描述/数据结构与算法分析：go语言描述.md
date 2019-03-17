@@ -156,7 +156,7 @@ func (a *ArrayList) Show() {
 
 
 
-### 02.链表
+### 02.简单链表
 
 在arraylist中元素被排列成一个线性序列，当添加的数据量达到容量值的时候，要进行拷贝。
 
@@ -293,9 +293,27 @@ func (l *LinkList) Traversal() {
 
 基于数组实现链表，我们也可以不适用指针，使用下标来表示下一个节点的位置，实现基于数组的链表。
 
+### 03.带头节点的链表
+
+带头节点的链表，好处在于所有的节点都有前驱，可以简化一部分插入和删除操作。
 
 
 
+### 04.循环链表
+
+循环链表是一个环状结构，链表的最后一个节点，和头节点相连。
+
+
+
+### 05.双向链表
+
+对比单向链表，多了一个prev节点，使得可以方便地从两个方向进行遍历
+
+为了方便遍历的进行，指针 first 和指针last分别指向第一个节点和最后一个节点
+
+C++中的标准list正是使用双向链表来实现
+
+go 的标准库 container/list 也是双向链表实现的
 
 
 
@@ -485,4 +503,109 @@ func (l *LinkStack) Display() {
 
 
 
+
+## 3.队列
+
+队列是一种FIFO（FIRST IN FIRST OUT 先进先出）的数据结构
+
+由于数组型队列浪费空间比较严重，所以不选择实现了。
+
+
+
+
+
+### 01.链式队列
+
+链式队列的go语言实现，基于单链表
+
+```go
+package queue
+
+import "fmt"
+
+// 链式队列节点
+type node struct {
+	element interface{}
+	next    *node
+}
+
+// Queue 链式队列的结构体
+type Queue struct {
+	front *node
+	back  *node
+	len   int
+}
+
+// Init 初始化队列或者清空队列
+func (q *Queue) Init() *Queue {
+	q.front = nil
+	q.back = nil
+	q.len = 0
+	return q
+}
+
+// New 获得一个初始化好的Queue
+func New() *Queue {
+	return new(Queue).Init()
+}
+
+// Empty 通过链式队列的元素个数len，判断队列是否为空
+func (q *Queue) Empty() bool {
+	if q.len == 0 {
+		return true
+	}
+	return false
+}
+
+// Enqueue 在队列尾部添加一个元素，如果队列为空，则队列头部和尾部都会等于这个新节点
+func (q *Queue) Enqueue(val interface{}) {
+	if q.Empty() {
+		q.back = &node{val, nil}
+		q.front = q.back
+		q.len++
+	} else {
+		tmp := q.front
+		for tmp.next != nil {
+			tmp = tmp.next
+		}
+		tmp.next = &node{val, nil}
+		q.back = tmp.next
+		q.len++
+	}
+}
+
+// Front 返回队列前端节点，没有判空逻辑，所以队列不为空时才能使用
+func (q *Queue) Front() interface{} {
+	return q.front.element
+}
+
+// Back 返回队列后端节点，没有判空逻辑，所以队列不为空时才能使用
+func (q *Queue) Back() interface{} {
+	return q.back.element
+}
+
+// Dequeue 删除队列前部节点，并返回值，如果队列为空，返回nil
+func (q *Queue) Dequeue() interface{} {
+	if q.Empty() {
+		return nil
+	}
+	val := q.front.element
+	q.front = q.front.next
+	if q.len == 1 {
+		q.back = nil
+	}
+	q.len--
+	return val
+}
+
+// Display  输出队列中的元素
+func (q *Queue) Display() {
+	tmp := q.front
+	for tmp != nil {
+		fmt.Print(tmp.element, " ")
+		tmp = tmp.next
+	}
+	fmt.Println()
+}
+```
 

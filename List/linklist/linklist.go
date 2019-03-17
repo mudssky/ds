@@ -1,6 +1,8 @@
 package linklist
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // Node 单链表的节点
 type Node struct {
