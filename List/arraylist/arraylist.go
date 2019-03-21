@@ -42,11 +42,11 @@ func (a *ArrayList) GetLen() int {
 func (a *ArrayList) expandCap() {
 	a.cap *= 2
 	// 创建一个新的切片，每次容量变为两倍
-	newist := make([]ListType, a.cap)
+	newlist := make([]ListType, a.cap)
 	// 将旧list数据全部拷贝到新list
-	copy(newist[:a.len], a.list[:a.len])
+	copy(newlist[:a.len], a.list[:a.len])
 
-	a.list = newist
+	a.list = newlist
 }
 
 // Append 在ArrayList列表尾部添加一个元素
