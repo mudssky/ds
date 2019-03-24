@@ -132,7 +132,6 @@ func (mh *MinHeap) up(nodeIndex int) {
 		// 进行交换影响了父节点，导致不一定满足堆次序，所以继续对父节点执行up操作
 		nodeIndex = parent
 	}
-
 }
 
 // down操作，调整一个近似堆为堆，从上到下沉降根节点的过程，传入要执行down操作的节点索引，和堆的元素个数

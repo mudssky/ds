@@ -6,7 +6,7 @@
 
 手头正好有一本书，《数据结构与算法分析：c++语言描述》，当年学数据结构的时候，真的完全没花心思进去，学出来跟没学一样，所以现在准备重学。
 
-那些数据结构，全部用go语言重新实现一遍。正好go语言里面其实也没有这方面的标准库，写完了，作为一个自己的库使用。
+那些数据结构，全部用go语言重新实现一遍。正好go语言里面其实也没有这方面的标准库，写完了，可以作为一个自己的库使用。
 
 
 
@@ -1483,7 +1483,7 @@ func BinInsertSort(nums []int) {
 
 
 
-### 02.堆、堆排序和优先队列
+### 02.堆
 
 已经证明，任何基于比较和交换的算法的最坏计算时间最少为O(n log n)。
 
@@ -1517,4 +1517,1947 @@ func BinInsertSort(nums []int) {
 
 
 同一般的二叉树一样，堆也可以通过链式结构或者数组存储。
+
+这里我们用数组实现，因为后面堆排序参数要传数组，要和其他排序统一。
+
+
+
+我们先研究一下堆操作中几个重要操作
+
+获取最大元素，只要返回堆顶的值就行，比较简单。
+
+
+
+删除最大元素，比如说Pop操作：
+
+​	显然在一个数组里面操作，我们这个位置的数据删掉不能空着（因为堆必须是完全树，而且空着也浪费空间），要拿最后一位数组替换，然后堆整体大小减一这样比较方便。
+
+​	因为我们拿随后一位交换，由于堆的性质，父节点大于子节点，层数越多的节点必然越小。所以我们是把一个很小的元素换到顶部，这样就不符合最大堆的性质了。
+
+​	这时这个产生的树被称为**近似堆**，因为它是完全树，并且两个子树都是堆，它不是堆的唯一原因是树根元素并不大于或等于它的子女们。
+
+​	要将近似堆转换为堆，我们必然要拿更大的元素把它换下去。
+
+​	可以把这个根元素，和子女节点中较大的一个进行交换。这样子，就满足根节点大于子女节点了。
+
+​	但是被交换的那个节点因为拿这个小的根节点交换扰乱了堆次序。所以说，可能不满足堆次序。
+
+​	我们检查一下是否满足堆次序，如果不满足，继续向下交换更大的节点。交换到最后肯定会满足。
+
+​	操作的实质是，三个节点中选出一个最大的作为顶点，所以必然满足顶点大于子女的堆性质。
+
+​	到底部的时候，最后一轮交换，就会导致所有有子女的节点满足堆性质。
+
+
+
+​	这个把顶部节点不断向下交换，并且如果被交换的节点不满足堆次序，不断向下调整的过程称为“下调”操作
+
+​	也就是**down**算法。
+
+​	
+
+```go
+func down(nums []int, nodeIndex int, len int) {
+	for {
+		// leftChild:=2*n+1
+		// 先假设要交换的是左子节点
+		changeChild := 2*nodeIndex + 1
+
+		if changeChild >= len {
+			break
+		}
+		// 如果右子节点比左子节点大，要交换的节点是右子节点
+		if rightChild := changeChild + 1; rightChild < len && nums[rightChild] > nums[changeChild] {
+			changeChild = rightChild
+		}
+		// 如果和子节点最大的一个交换后的头部，仍然大于子节点，那么就不用继续交换了，退出条件
+		if nums[nodeIndex] >= nums[changeChild] {
+			break
+		}
+		nums[changeChild], nums[nodeIndex] = nums[nodeIndex], nums[changeChild]
+		nodeIndex = changeChild
+	}
+}
+```
+
+
+
+​	插入一个元素操作，插入一个元素，元素直接放在数组的末尾（因为数组不是有序的，你就算想用插入的算法，并不容易）。插入一个元素时进行的操作其实就是前面所讲的down操作的逆操作。
+
+​	因为数被放在数组尾部，但是它并不一定是最小的。我们需要把它向上调整，使保持最大堆性质。
+
+​	所以，比较它和另外一个子女节点，把较大的一个和父节点交换。父节点同样可能因为交换受到影响，所以不断向上执行这个操作，不断把父节点换成最大值。
+
+​	这也就是up算法
+
+​	
+
+​	没有单独写过，就拿出我这个最大堆里面的up方法
+
+```go
+// up操作，适用于在堆的尾部插入节点的时候，使其上浮，维持堆次序
+func (mh *MinHeap) up(nodeIndex int) {
+	for {
+		parent := (nodeIndex - 1) / 2
+		// 如果当前节点nodeIndex是根节点，或者当前节点不比父节点大，说明满足堆次序，这是退出条件
+		if parent == nodeIndex || mh.Less(nodeIndex, parent) {
+			break
+		}
+		mh.Swap(parent, nodeIndex)
+		// 进行交换影响了父节点，导致不一定满足堆次序，所以继续对父节点执行up操作
+		nodeIndex = parent
+	}
+}
+```
+
+
+
+
+
+
+
+go语言实现最大堆
+
+```go
+// Package maxheap 最大堆,基于int类型的数组实现，因为接下来要实现堆排序
+// 这里算是先熟悉一下堆的操作，int 类型数组的比较实用，
+package maxheap
+
+const (
+	// INITCAP 初始容量
+	INITCAP = 10
+)
+
+// MaxHeap 最大堆的数据结构
+type MaxHeap struct {
+	len  int //最大堆里的元素个数
+	list []int
+	cap  int //底层切片容量
+}
+
+// Init 初始化最大堆(空堆)
+func (mh *MaxHeap) Init() *MaxHeap {
+	mh.len = 0
+	mh.list = make([]int, INITCAP)
+	mh.cap = INITCAP
+	return mh
+}
+
+// New 返回一个初始化好的空堆
+func New() *MaxHeap {
+	return new(MaxHeap).Init()
+}
+
+// InitWithCopy 初始化一个mh，使用已有的切片，将执行建堆操作
+func (mh *MaxHeap) InitWithCopy(toHeapify []int) *MaxHeap {
+	mh.list = toHeapify
+	mh.len = len(toHeapify)
+	mh.cap = mh.len
+	mh.heapify()
+	return mh
+}
+
+// NewWithCopy 传入一个已有的切片，返回一个以传入切片建堆的mh对象
+func NewWithCopy(toHeapify []int) *MaxHeap {
+	return new(MaxHeap).InitWithCopy(toHeapify)
+}
+
+// Len 返回当前堆中的元素个数
+func (mh *MaxHeap) Len() int {
+	return mh.len
+}
+
+// Empty 检查堆是否为空
+func (mh *MaxHeap) Empty() bool {
+	if mh.len == 0 {
+		return true
+	}
+	return false
+}
+
+func (mh *MaxHeap) heapify() {
+	last := mh.len
+	//  将任意一个二叉树list进行建堆的heapidy算法
+	// 就是对所有非叶节点执行down操作，把一个子树的父节点都变成大于两个子节点，也就满足了堆的性质
+	for i := last/2 - 1; i >= 0; i-- {
+		mh.down(i)
+	}
+}
+
+// More 判断堆中下标index1是否比下标index2的值大
+func (mh *MaxHeap) More(index1, index2 int) bool {
+	if mh.list[index1] > mh.list[index2] {
+		return true
+	}
+	return false
+}
+
+// Less 判断堆中下标index1是否比下标index2的值小
+func (mh *MaxHeap) Less(index1, index2 int) bool {
+	if mh.list[index1] < mh.list[index2] {
+		return true
+	}
+	return false
+}
+
+// Swap 交换堆中两个下标所指的值
+func (mh *MaxHeap) Swap(index1, index2 int) {
+	mh.list[index1], mh.list[index2] = mh.list[index2], mh.list[index1]
+}
+
+// Top 返回堆顶部的元素
+func (mh *MaxHeap) Top() int {
+	return mh.list[0]
+}
+
+// expandCap 扩容底部数组为两倍
+func (mh *MaxHeap) expandCap() {
+	mh.cap *= 2
+	// 创建一个新的切片，每次容量变为两倍
+	newlist := make([]int, mh.cap)
+	// 将旧list数据全部拷贝到新list
+	copy(newlist[:mh.len], mh.list[:mh.len])
+
+	mh.list = newlist
+}
+
+// Push 插入一个值到最大堆mh中,执行up使这个值达到合适位置，并且维持堆次序
+func (mh *MaxHeap) Push(v int) {
+	if mh.len == mh.cap {
+		mh.expandCap()
+	}
+	if mh.len == 0 {
+		mh.list[0] = v
+		mh.len++
+	} else {
+		mh.list[mh.len] = v
+		mh.len++
+		mh.up(mh.list[mh.len-1])
+	}
+}
+
+// Pop 删除最大堆顶部的值，并返回,原来的头部会被交换到最后，虽然不在堆的元素中，但是底层切片还是能返回的，执行down维持堆次序
+func (mh *MaxHeap) Pop() int {
+	// 删除，元素个数减少
+	mh.len--
+	// 正好最后一个元素的索引是mh.len-1,和它交换，顺便原来的头部也被删除
+	// lastIndex := mh.len
+	rootValue := mh.list[0]
+	// 和最后一个节点交换，由于mh.len减少，所以堆里面找不到了
+	mh.Swap(0, mh.len)
+	// 把这个交换来的头节点降到合适的位置
+	mh.down(0)
+	return rootValue
+}
+
+// up操作，适用于在堆的尾部插入节点的时候，使其上浮，维持堆次序
+func (mh *MaxHeap) up(nodeIndex int) {
+	for {
+		parent := (nodeIndex - 1) / 2
+		// 如果当前节点nodeIndex是根节点，或者当前节点不比父节点大，说明满足堆次序，这是退出条件
+		if parent == nodeIndex || mh.Less(nodeIndex, parent) {
+			break
+		}
+		mh.Swap(parent, nodeIndex)
+		// 进行交换影响了父节点，导致不一定满足堆次序，所以继续对父节点执行up操作
+		nodeIndex = parent
+	}
+
+}
+
+// down操作，调整一个近似堆为堆，从上到下沉降根节点的过程，传入要执行down操作的节点索引，和堆的元素个数
+// 也能返回一个bool，判断某个节点是否满足堆次序，如果满足，返回false，不满足，返回true
+func (mh *MaxHeap) down(nodeIndex0 int) bool {
+	nodeIndex := nodeIndex0
+	for {
+		// 先假设更大的节点是左子节点
+		changeChild := nodeIndex*2 + 1
+		// 小于0是数据溢出的情况，如果给的节点超出范围break
+		if changeChild >= mh.len || changeChild < 0 {
+			break
+		}
+		// 如果右节点小于左节点
+		if rightChild := changeChild + 1; rightChild < mh.len && mh.Less(changeChild, rightChild) {
+			// 如果右子节点更大，要改变的节点是右子节点
+			changeChild = rightChild
+		}
+		// 判断要判断的节点是否满足堆次序
+		// 如果执行down操作的节点小于最大的子节点，要执行交换操作
+		if !mh.Less(nodeIndex, changeChild) {
+			break
+		}
+		mh.Swap(nodeIndex, changeChild)
+		// nodeIndex这个位置已经被纠正，但是它改变了和它交换的那个节点的结构，所以下一步要继续纠正交换的那个节点
+		nodeIndex = changeChild
+
+	}
+	// 加上返回值是为了判断是否有序，如果一开始就是有序的，那么nodeIndex和最开始传入的不会变化，返回false
+	// 如果一开始不是有序的，返回true
+	return nodeIndex > nodeIndex0
+
+}
+
+```
+
+go语言实现最小堆
+
+最小堆与最大堆最大的不同是，交换顺序不同，最小堆要把小的元素向顶部方向交换，而最大堆是把大的元素向顶部方向交换。
+
+```go
+// Package minheap 最大堆,基于int类型的数组实现，因为接下来要实现堆排序
+// 这里算是先熟悉一下堆的操作，int 类型数组的比较实用，
+package minheap
+
+const (
+	// INITCAP 初始容量
+	INITCAP = 10
+)
+
+// MinHeap 最大堆的数据结构
+type MinHeap struct {
+	len  int //最大堆里的元素个数
+	list []int
+	cap  int //底层切片容量
+}
+
+// Init 初始化最大堆(空堆)
+func (mh *MinHeap) Init() *MinHeap {
+	mh.len = 0
+	mh.list = make([]int, INITCAP)
+	mh.cap = INITCAP
+	return mh
+}
+
+// New 返回一个初始化好的空堆
+func New() *MinHeap {
+	return new(MinHeap).Init()
+}
+
+// InitWithCopy 初始化一个mh，使用已有的切片，将执行建堆操作
+func (mh *MinHeap) InitWithCopy(toHeapify []int) *MinHeap {
+	mh.list = toHeapify
+	mh.len = len(toHeapify)
+	mh.cap = mh.len
+	mh.heapify()
+	return mh
+}
+
+// NewWithCopy 传入一个已有的切片，返回一个以传入切片建堆的mh对象
+func NewWithCopy(toHeapify []int) *MinHeap {
+	return new(MinHeap).InitWithCopy(toHeapify)
+}
+
+// Len 返回当前堆中的元素个数
+func (mh *MinHeap) Len() int {
+	return mh.len
+}
+
+// Empty 检查堆是否为空
+func (mh *MinHeap) Empty() bool {
+	if mh.len == 0 {
+		return true
+	}
+	return false
+}
+
+// Top 返回堆顶部的元素
+func (mh *MinHeap) Top() int {
+	return mh.list[0]
+}
+
+func (mh *MinHeap) heapify() {
+	last := mh.len
+	//  将任意一个二叉树list进行建堆的heapidy算法
+	// 就是对所有非叶节点执行down操作，把一个子树的父节点都变成大于两个子节点，也就满足了堆的性质
+	for i := last/2 - 1; i >= 0; i-- {
+		mh.down(i)
+	}
+}
+
+// More 判断堆中下标index2是否比下标index1的值小
+func (mh *MinHeap) Less(index1, index2 int) bool {
+	if mh.list[index1] > mh.list[index2] {
+		return true
+	}
+	return false
+}
+
+// Swap 交换堆中两个下标所指的值
+func (mh *MinHeap) Swap(index1, index2 int) {
+	mh.list[index1], mh.list[index2] = mh.list[index2], mh.list[index1]
+}
+
+// expandCap 扩容底部数组为两倍
+func (mh *MinHeap) expandCap() {
+	mh.cap *= 2
+	// 创建一个新的切片，每次容量变为两倍
+	newlist := make([]int, mh.cap)
+	// 将旧list数据全部拷贝到新list
+	copy(newlist[:mh.len], mh.list[:mh.len])
+
+	mh.list = newlist
+}
+
+// Push 插入一个值到最大堆mh中,执行up使这个值达到合适位置，并且维持堆次序
+func (mh *MinHeap) Push(v int) {
+	if mh.len == mh.cap {
+		mh.expandCap()
+	}
+	if mh.len == 0 {
+		mh.list[0] = v
+		mh.len++
+	} else {
+		mh.list[mh.len] = v
+		mh.len++
+		mh.up(mh.list[mh.len-1])
+	}
+}
+
+// Pop 删除最大堆顶部的值，并返回，执行down维持堆次序
+func (mh *MinHeap) Pop() int {
+	// 删除，元素个数减少
+	mh.len--
+	// 正好最后一个元素的索引是mh.len-1,和它交换，顺便原来的头部也被删除
+	// lastIndex := mh.len
+	rootValue := mh.list[mh.len]
+	mh.Swap(0, mh.len)
+	// 把这个交换来的头节点降到合适的位置
+	mh.down(0)
+	return rootValue
+}
+
+// up操作，适用于在堆的尾部插入节点的时候，使其上浮，维持堆次序
+func (mh *MinHeap) up(nodeIndex int) {
+	for {
+		parent := (nodeIndex - 1) / 2
+		// 如果当前节点nodeIndex是根节点，或者当前节点不比父节点大，说明满足堆次序，这是退出条件
+		if parent == nodeIndex || mh.Less(nodeIndex, parent) {
+			break
+		}
+		mh.Swap(parent, nodeIndex)
+		// 进行交换影响了父节点，导致不一定满足堆次序，所以继续对父节点执行up操作
+		nodeIndex = parent
+	}
+
+}
+
+// down操作，调整一个近似堆为堆，从上到下沉降根节点的过程，传入要执行down操作的节点索引，和堆的元素个数
+// 也能返回一个bool，判断某个节点是否满足堆次序，如果满足，返回false，不满足，返回true
+func (mh *MinHeap) down(nodeIndex0 int) bool {
+	nodeIndex := nodeIndex0
+	for {
+		// 先假设更大的节点是左子节点
+		changeChild := nodeIndex*2 + 1
+		// 小于0是数据溢出的情况，如果给的节点是叶节点的情况就会走这边break
+		if changeChild >= mh.len || changeChild < 0 {
+			break
+		}
+		// 如果右节点小于左节点
+		if rightChild := changeChild + 1; rightChild < mh.len && mh.Less(changeChild, rightChild) {
+			// 如果右子节点更大，要改变的节点是右子节点
+			changeChild = rightChild
+		}
+		// 判断要判断的节点是否满足堆次序
+		// 如果执行down操作的节点小于最大的子节点，要执行交换操作
+		if mh.Less(nodeIndex, changeChild) {
+			mh.Swap(nodeIndex, changeChild)
+		} else {
+			// 如果已经满足堆次序，这就是退出条件
+			break
+		}
+		// nodeIndex这个位置已经被纠正，但是它改变了和它交换的那个节点的结构，所以下一步要继续纠正交换的那个节点
+		nodeIndex = changeChild
+
+	}
+	// 加上返回值是为了判断是否有序，如果一开始就是有序的，那么nodeIndex和最开始传入的不会变化，返回false
+	// 如果一开始不是有序的，返回true
+	return nodeIndex > nodeIndex0
+
+}
+
+```
+
+
+
+
+
+
+
+#### 002.堆排序
+
+​	所谓堆排序，就是先把要排序的数据结构构造成堆。
+
+​	比如说最大堆，然后，我们每次从堆顶去除最大元素放到合适的位置。然后执行down算法，调整堆结构使符合堆次序，就可以接着取最大值。
+
+​	循环地这样取最大值放到合适位置，就完成了排序。
+
+
+
+​	所以堆排序的第一步就是把要排序的数据结构构造成堆。
+
+​	也就是所谓的**建堆算法（heapify）**
+
+算法如下，即对除了最底层以外的所有节点，执行down操作，使这个节点处于合适的位置。
+
+```go
+for i := numsLen/2 - 1; i >= 0; i-- {
+		down(nums, i, numsLen)
+	}
+```
+
+
+
+​	第二部，我们从这个堆里取出节点，和数组最后交换。然后堆大小减一（删除这个叶子），剩下的部分对根节点执行down算法，又可以获得一个最大值，不断重复直到堆里只剩一个值，排序成功
+
+​	go语言实现堆排序
+
+```go
+// down算法，用于建堆，还有删除头部后的调整工作
+func down(nums []int, nodeIndex int, len int) {
+	for {
+		// leftChild:=2*n+1
+		// 先假设要交换的是左子节点
+		changeChild := 2*nodeIndex + 1
+
+		if changeChild >= len {
+			break
+		}
+		// 如果右子节点比左子节点大，要交换的节点是右子节点
+		if rightChild := changeChild + 1; rightChild < len && nums[rightChild] > nums[changeChild] {
+			changeChild = rightChild
+		}
+		// 如果头部大于最大的子节点，那么就不用继续交换了，这是退出条件
+		if nums[nodeIndex] >= nums[changeChild] {
+			break
+		}
+		nums[changeChild], nums[nodeIndex] = nums[nodeIndex], nums[changeChild]
+		nodeIndex = changeChild
+	}
+}
+
+// HeapSort 从零开始实现堆排序
+func HeapSort(nums []int) {
+	numsLen := len(nums)
+	// heapify 在数组上建堆
+	for i := numsLen/2 - 1; i >= 0; i-- {
+		down(nums, i, numsLen)
+	}
+
+	// 需要一个元素记录堆的大小
+	heapSize := numsLen
+	// 建完堆后，是最大堆，所以数组开头是最大值，只需要不断取出最大值放到数组末尾即可
+	for j := 0; j < numsLen-1; j++ {
+		// 交换最大值,即头节点到尾部
+		nums[0], nums[numsLen-j-1] = nums[numsLen-j-1], nums[0]
+		// 已经交换到尾部的元素位置已经排好，从堆中移除，
+		heapSize--
+		// 此时头部可能变小，需要执行down操作，使结构满足最大堆
+		down(nums, 0, heapSize)
+	}
+}
+```
+
+
+
+算法时间复杂度O(n log n)
+
+因为下调down算法的计算时间为O(log n)，因为数据都挂在堆(二叉树)上，最差的情况交换到最底部，也只是`log n`，建堆算法中大约执行了n/2次down算法，而在循环中，执行了n-1次下调，所以整体来说是 O(log n)级别。
+
+
+
+#### 003.堆和优先队列
+
+​	有两种很自然的方法可以实现优先队列，一种是使用列表（数组、链表等），另一种是有序列表
+
+​	列表的情况有链表和数组之分。
+
+​	如果是数组，插入操作 O(1)，只要放到最后就行了。 删除优先级最高的项比如说Pop操作，需要遍历整个列表，找到优先级最高的项，删除,把它和头或尾的节点交换，然后删除这个项，比如说length-1之类的操作。时间复杂度O(n)
+
+
+
+​	如果是有序列表，情况是反过来的。
+
+​	插入操作，时间复杂度O(n)，删除操作，只需删除队头 O(1)
+
+
+
+​	最好的实现方式是使用堆。根据优先级判断元素之间的大小。优先级队列的相关操作，可以调用堆插入和删除的相关操作。所有操作都可以在O(log n)的时间完成。
+
+​	因为暂时没有碰到需要用这个优先队列的情况，所以暂时不做实现。
+
+
+
+
+
+### 03.快速排序
+
+
+
+​	我们从之前编写的交换排序算法，比如冒泡排序中可以看到。每轮都比较并在需要时交换相邻的元素。这意味着有可能需要更多的交换才能把一个元素移动到正确位置
+
+​	快速排序正是改进了一个元素移动到正确位置的时间。
+
+​	快速排序采用分治策略，选区某个被称为基准（pivot）的元素，然后进行一系列交换，使得小于或等于这个基准的所有元素放在基准的前面，而所有大于基准的元素都放在其后面。这样就很好地确定了基准的位置。并且把列表分成两个更小的子列表，每个子列表都可以用同样的方法来排序。反复地运用这个方法最终得到基于排序的短列表。我们可以很自然地用递归实现这个算法。
+
+
+
+go实现快速排序
+
+// QuickSort 快速排序算法,选取一个基准值，用两个游标，分别从后往前遍历小于基准值的，从前往后遍历大于基准值的，交换这两个元素。
+
+// 如果两个游标相遇，说明整个列表已经遍历完了，并且可以得出游标的位置，再对游标左边的部分数组，和游标右边的部分数组执行一样的操作
+
+```go
+func quicksort(nums []int, first, last int) {
+	/*
+		numsLen := len(nums)
+		if numsLen <= 1 {
+			return
+		}*/
+	// 可以判断左右边界作为退出条件，如果first=last，说明只有一个元素
+	if first >= last {
+		return
+	}
+	left := first
+	right := last
+	// 选取左边第一个元素作为基准值
+	pivot := nums[first]
+	for left < right {
+		// 在右边查找<=基准值的元素,最后right即保存了元素位置
+		for nums[right] > pivot {
+			right--
+		}
+		// 在左边查找>基准的元素
+		for left < right && nums[left] <= pivot {
+			left++
+		}
+		// 如果左右两个游标还没有碰头，交换两个元素
+		if left < right {
+			nums[left], nums[right] = nums[right], nums[left]
+		}
+	}
+	// 查找结束后，确定基准的位置,right查找的时候查找的是<=基准值的元素，所以最后会停在基准值位置
+	// pos := right
+	// 交换基准值和基准值位置所在的元素
+	nums[right], nums[first] = nums[first], nums[right]
+	quicksort(nums, first, right-1)
+	quicksort(nums, right+1, last)
+}
+
+// QuickSort 快速排序算法
+func QuickSort(nums []int) {
+	quicksort(nums, 0, len(nums)-1)
+}
+
+```
+
+
+
+**时间复杂度**
+
+快速排序的最坏情况发生在已经排好序，或者元素的排列符合反向次序的时候。
+
+最坏计算时间是O(n^2). 很明显，如果是这两种情况，快速排序，每轮遍历上一次长度减一的列表。就相当于选择排序的效率。
+
+快速排序的平均计算时间是O(n log n)
+
+通过树状图（每一次递归的分歧都是树的节点）我们可以得出这一结论。
+
+在每一层中，我们执行的所有遍历操作是列表的长度，n
+
+树的层数为L，那么计算时间为O(n*L)
+
+如果每次基准值，分开的两个列表大小相近，那么树的层数，就是log n,所以时间复杂度为O(n log n)
+
+
+
+但是在最坏情况中，每次都产生一个空的子列表，所以说输的层数有n层，所以最坏时间复杂度O(n^2)
+
+
+
+
+
+**快读排序的优化**
+
+1. 基准的选择： 目前我们选择列表中的第一个元素作为基准，然而，这通常使用于随机列表，如果列表部分有序，这种拆分并不理想。一种选择通用基准的方法 **三数取中原则（median-of-the-three rule）**，即选取子列表的第一个，中间一个和最后一个元素的中间一个作为基准。
+2. 短子列表：对于短列表（n<=20），快读排序的性能低于插入排序的性能。快速排序的递归过程中有很多短列表会出现。因此一种通用的方法是对短列表使用高效的排序算法（比如，插入排序）。一种更好的思想史，忽略所有的短子列表，当快速排序算法结束时，列表还没有排好序。然而，它只包含很小的无序元素组，并且这种组里面的所有元素都比其他组的元素小。我们可以使用插入排序来对该列表进行排序，因为插入排序对近乎有序的列表尤为有效。
+
+
+
+### 04.归并排序
+
+​	
+
+​	根据数据项存放在内存还是外存，排序算法能够分为**内部排序算法**和**外部排序算法**两种。
+
+​	前面描述的几种排序方案基本上只用作内部排序。它们不适用于对顺序文件的处理，因为它们要对列表元素进行直接存取，这在顺序文件中不能实现。另外它们中的几个还对列表进行多遍扫描，这也不适用于顺序文件，因为这要求在每次扫描之前都必须跳回文件开头，且大量来自磁盘的数据传输会耗费大量时间。
+
+​	归并排序既可以用作内部排序，也可以用作外部排序。它通常用于外部排序。
+
+
+
+​	正如其名字所示的那样，归并排序的基本操作是归并，即把两个已经有序的列表合并成为一个新的有序列表。
+
+​	比如说，为了合并文件file1和file2来产生有序file3，从每个文件中按顺序选取元素，然后这两个元素进行比较，较小的写入file3，被写入的那个文件继续取。如果有一个文件遍历到结尾了，就把另一个文件剩下的全部拷贝过去，不断 重复这个操作。这就是归并操作。
+
+
+
+**折半归并排序**
+
+举例说明，F是一个8元素子文件
+
+将文件F的元素交替地复制到文件F1和F2中
+
+F  : 75 55 15 20 85 30 35 10 60 40 50 25 45 80 70 65
+
+F1: 75 15 85 35 60 50 45 70
+
+F2: 55 20 30 10 40 25 80 65
+
+然后把F1的单元素子文件和F2的单元素子文件合并，从而产生F的有序双元素子文件
+
+F `55 75` `15 20` `30 85` `10 35 ` `40 60` `25 50` `45 80` `65 70`
+
+然后在把文件F分为两个双元素子文件
+
+F1 : `55 75` `30 85` `40 60` `45 80`
+
+F2: `15 20` `10 35` `25 50` `65 70`
+
+再把F1和F2中的双元素子文件合并，从而产生F的有序四元素子文件：
+
+F: `15 20 55 75` `10 30 35 85` `25 40 50 60` `45 65 70 80`
+
+然后把F的四元素子文件分到F1和F2中
+
+...
+
+重复以上操作，最后是F1和F2两个 文件都是8元素，合并以后就得到有序的F文件了。
+
+
+
+**自然归并排序**
+
+​	折半归并排序要求子文件的长度为1,2,4,8，...2^k^，其中 2^k^ >= F的长度，因此总是经历k个拆分-归并阶段。如果允许使用其他长度的子文件，则阶段数有可能减少，利用了这些"自然的"有序子文件的归并排序被称为自然归并。
+
+​	
+
+go语言实现归并排序(内部排序)
+
+```go
+// 对两个有序数组执行的归并操作,其中mid是把数组区域分成两部分的下标,左半部分数组为l到mid，右半部分是mid+1到终点r
+func merge(nums []int, l, mid, r int) {
+	// 因为需要修改原数组nums的数据，复制一份left到right的数据，用于比较
+	tmpNums := make([]int, r-l+1)
+	for i := 0; i <= r-l; i++ {
+		tmpNums[i] = nums[i+l]
+	}
+	// 定义左右两个游标
+	left := l
+	right := mid + 1
+	for i := l; i <= r; i++ {
+		// 如果左边的游标超过终点，说明只剩右边的数值
+		if left > mid {
+			nums[i] = tmpNums[right-l]
+			right++
+			// 如果右边的游标超过终点，说明只剩左边的数值
+		} else if right > r {
+			nums[i] = tmpNums[left-l]
+			left++
+			// 左边的数据小于右边的数据，选左边的
+		} else if tmpNums[left-l] < tmpNums[right-l] {
+			nums[i] = tmpNums[left-l]
+			left++
+			// 剩下的情况是右边的数据比较小，选右边的
+		} else {
+			nums[i] = tmpNums[right-l]
+			right++
+		}
+
+	}
+
+}
+
+func mergesort(nums []int, l int, r int) {
+	if l >= r {
+		return
+	}
+	mid := (l + r) / 2
+	// 递归向下
+	mergesort(nums, l, mid)
+	mergesort(nums, mid+1, r)
+	// 归并向上
+	merge(nums, l, mid, r)
+}
+
+// MergeSort 归并排序,merge操作合并两个有序数组，mergesort归并排序，将一个数组不断二分直到只有两个元素，然后不断向上merge归并
+func MergeSort(nums []int) {
+	mergesort(nums, 0, len(nums)-1)
+}
+
+```
+
+
+
+**时间复杂度**
+
+自然归并的最坏情况发生在项反向有序的时候，此时，自然归并排序的工作方式和折半归并排序一样，其子文件的长度为1，2，4,8等，这样在对包含n项的文件或列表进行操作时，需要进行log~2~ n次拆分和归并操作，且在每次操作中所有n项都被检查，因此，在最坏情况下（平均情况也一样），自然归并排序的计算时间是O(n log~2~n)。
+
+**归并排序的优化**
+
+1. 只有左边数据的最大值大于右边数据的最小值的时候才需要归并
+2. 当二分数据到一定阶段，可以使用插入排序，而不是继续向下二分。虽然复杂度上看 nlogn 始终大于 n^2，但是都忽略了常数项，而归并的常数项大于插入排序，所以当 n 足够小时，插入排序速度更快
+
+
+
+go 归并排序优化
+
+```go
+package main
+    
+import "fmt"
+    
+func merge(arr []int, l int, mid int, r int) {
+    temp := make([]int, r-l+1)
+    for i := l; i <= r; i++ {
+        temp[i-l] = arr[i]
+    }
+    
+    left := l
+    right := mid + 1
+    
+    for i := l; i <= r; i++ {
+        if left > mid {
+            arr[i] = temp[right-l]
+            right++
+        } else if right > r {
+            arr[i] = temp[left-l]
+            left++
+        } else if temp[left - l] > temp[right - l] {
+            arr[i] = temp[right - l]
+            right++
+        } else {
+            arr[i] = temp[left - l]
+            left++
+        }
+    }
+}
+    
+func MergeSort(arr []int, l int, r int) {
+    // 第二步优化，当数据规模足够小的时候，可以使用插入排序
+    if r - l <= 15 {
+        // 对 l,r 的数据执行插入排序
+        for i := l + 1; i <= r; i++ {
+            temp := arr[i]
+            j := i
+            for ; j > 0 && temp < arr[j-1]; j-- {
+                arr[j] = arr[j-1]
+            }
+            arr[j] = temp
+        }
+        return
+    }
+    
+    mid := (r + l) / 2
+    MergeSort(arr, l, mid)
+    MergeSort(arr, mid+1, r)
+    
+    // 第一步优化，左右两部分已排好序，只有当左边的最大值大于右边的最小值，才需要对这两部分进行merge操作
+    if arr[mid] > arr[mid + 1] {
+        merge(arr, l, mid, r)
+    }
+}
+    
+func main() {
+    arr := []int{3, 1, 2, 5, 6, 43, 4}
+    MergeSort(arr, 0, len(arr)-1)
+    
+    fmt.Println(arr)
+}
+```
+
+
+
+### 05.基数排序（Radix Sort）
+
+基数排序，是检查元素某种进制表示下各位的数字来进行排序的。
+
+其中一种比较简单的版本被称为最低位优先基数排序。因为这种方法，从右向左处理数字。
+
+准备0-9十个容器
+
+我们假设要排序的数组，都是3位数，这样描述起来方便
+
+先根据最后一位，把数字分别放到这10个容器。再按0-9，从下到上（从左至右，从下到上）顺序取出，这样我们就得到了最后一位（也就是各位）排好序的数组
+
+接着我们将得到的数组，按照十位的数字，放到这10个容器中，再按0-9，这样我们就得到了个位十位两位都排好序的数据。
+
+依此类推，下一次我们就能得到3位数都排好序的数组。
+
+go语言实现
+
+```go
+// RadixSort 基数排序，准备10个切片分别代表0-9，先按照末尾第一位把数组里的元素放到对应的切片里。然后按从左到右0-9，从下到上（也就是切片从左到右，下标从小到大）的顺序取出
+// 继续对下一位执行同一操作，那么我们拍好了后两位
+// 继续执行上述操作，知道把最大的位数执行完。
+func RadixSort(nums []int) {
+	numsLen := len(nums)
+	if numsLen <= 1 {
+		return
+	}
+	// 1.第一步，我们要获取数组中元素的最大位数
+	// 先得到数组中最大的元素
+	max := nums[0]
+	for i := 1; i < numsLen; i++ {
+		if nums[i] > max {
+			max = nums[i]
+		}
+	}
+	// 得到最大元素的位数
+	length := 0
+	for max != 0 {
+		max /= 10
+		length++
+	}
+	// fmt.Println(length)
+
+	// digit存储遍历的位数
+	for digit := 1; digit <= length; digit++ {
+		// 2. 准备10个切片数组，用于存放基数分别为0-9的元素
+		radix := make([][]int, 10)
+		for i := 0; i < 10; i++ {
+			// 初始化10个切片
+			radix[i] = []int{}
+		}
+		for i := 0; i < numsLen; i++ {
+			// 取遍历位的数字，先除以10，让要取的位变成最后位，然后用mod 10的方法取个位
+			digitNum := nums[i]
+			for j := 0; j < digit-1; j++ {
+				if digitNum == 0 {
+					break
+				}
+				digitNum /= 10
+			}
+			// fmt.Println(digitNum)
+			digitNum %= 10
+			// fmt.Println(digitNum)
+			// 按照这个位数上的数字放到对应的切片中
+			radix[digitNum] = append(radix[digitNum], nums[i])
+		}
+		// 再按左到右，从下到上的顺序取出,放回原数组
+		index := 0
+		for i := 0; i < 10; i++ {
+			for j := 0; j < len(radix[i]); j++ {
+				nums[index] = radix[i][j]
+				index++
+			}
+		}
+	}
+}
+
+```
+
+
+
+### 06.性能测试
+
+​	生成随机数组进行测试。
+
+​	一种是一个大小较大的1000元素的数组，随机数范围100000，另一个是20元素大小的短列表，随机数范围1000
+
+​	生成的数组有序的可能性比较小，可能和我们平时使用的情况不太符合。不过我们可以知道乱序情况下排序算法的效率
+
+
+
+随机数生成函数如下
+
+```go
+// RandomInt1000 用于生成1000个随机Int的数组
+func RandomInt1000() (nums []int) {
+	nums = make([]int, 1000)
+	rand.Seed(time.Now().Unix())
+	for i := 0; i < len(nums); i++ {
+		nums[i] = rand.Intn(100000)
+	}
+	return
+}
+
+// RandomInt20 用于生成20个随机Int的数组
+func RandomInt20() (nums []int) {
+	nums = make([]int, 20)
+	rand.Seed(time.Now().Unix())
+	for i := 0; i < len(nums); i++ {
+		nums[i] = rand.Intn(1000)
+	}
+	return
+}
+
+```
+
+测试文件如下
+
+```go
+package sort
+
+import (
+	"fmt"
+	"sort"
+	"testing"
+)
+
+func TestSelectSort(t *testing.T) {
+	type args struct {
+		nums []int
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		// TODO: Add test cases.
+		{"test1", args{[]int{9, 3, 5, 4, 6, 7, 8, 2, 1}}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			SelectSort(tt.args.nums)
+			fmt.Println("select:", tt.args.nums)
+		})
+	}
+}
+func TestBubbleSort(t *testing.T) {
+	type args struct {
+		nums []int
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{"test1", args{[]int{9, 3, 5, 4, 6, 7, 8, 2, 1}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			BubbleSort(tt.args.nums)
+			fmt.Println("bubble:", tt.args.nums)
+		})
+	}
+}
+
+func TestInsertSort(t *testing.T) {
+	type args struct {
+		nums []int
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{"test1", args{[]int{9, 3, 5, 4, 6, 7, 8, 2, 1}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			InsertSort(tt.args.nums)
+			fmt.Println("insert:", tt.args.nums)
+		})
+	}
+}
+func TestTwBubbleSort(t *testing.T) {
+	type args struct {
+		nums []int
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{"test1", args{[]int{9, 3, 5, 4, 6, 7, 8, 2, 1}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			TwBubbleSort(tt.args.nums)
+			fmt.Println("twbubble:", tt.args.nums)
+		})
+	}
+}
+
+func TestTwsBubbleSort(t *testing.T) {
+	type args struct {
+		nums []int
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{"test1", args{[]int{9, 3, 5, 4, 6, 7, 8, 2, 1}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			TwsBubbleSort(tt.args.nums)
+		})
+	}
+}
+
+func TestBinInsertSort(t *testing.T) {
+	type args struct {
+		nums []int
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{"test1", args{[]int{9, 3, 5, 4, 6, 7, 8, 2, 1}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			BinInsertSort(tt.args.nums)
+		})
+	}
+}
+
+func TestHeapSort(t *testing.T) {
+	type args struct {
+		nums []int
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{"test1", args{[]int{9, 3, 5, 4, 6, 7, 8, 2, 1}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			HeapSort(tt.args.nums)
+			fmt.Println("heapsort:", tt.args.nums)
+		})
+	}
+}
+
+func TestQuickSort(t *testing.T) {
+	type args struct {
+		nums []int
+	}
+	nums1 := RandomInt1000()
+	tests := []struct {
+		name string
+		args args
+	}{
+		{"test1", args{nums1}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			QuickSort(tt.args.nums)
+			fmt.Println("quicksort:", tt.args.nums)
+		})
+	}
+}
+
+func TestMergeSort(t *testing.T) {
+	type args struct {
+		nums []int
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{"test1", args{[]int{9, 3, 5, 4, 6, 7, 8, 2, 1}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			MergeSort(tt.args.nums)
+			fmt.Println("mergesort:", tt.args.nums)
+		})
+	}
+}
+
+func TestRadixSort(t *testing.T) {
+	type args struct {
+		nums []int
+	}
+	tests := []struct {
+		name string
+		args args
+	}{
+		{"test1", args{[]int{9, 345, 524, 4454, 65445, 7212, 8212, 211, 1}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			RadixSort(tt.args.nums)
+			fmt.Println("radixsort:", tt.args.nums)
+		})
+	}
+}
+
+func TestRandomInt1000(t *testing.T) {
+	tests := []struct {
+		name     string
+		wantNums []int
+	}{
+		{"dasd", []int{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fmt.Println(RandomInt1000())
+		})
+	}
+}
+
+func BenchmarkSelectSort(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		SelectSort(nums)
+	}
+}
+func BenchmarkBubbleSort(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		BubbleSort(nums)
+	}
+}
+
+func BenchmarkInsertSort(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		InsertSort(nums)
+	}
+}
+
+func BenchmarkTwBubbleSort(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		TwBubbleSort(nums)
+	}
+}
+
+func BenchmarkTwsBubbleSort(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		TwsBubbleSort(nums)
+	}
+}
+
+func BenchmarkBinInsertSort(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		BinInsertSort(nums)
+	}
+}
+
+func BenchmarkHeapSort(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		HeapSort(nums)
+	}
+}
+
+func BenchmarkQuickSort(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		QuickSort(nums)
+	}
+}
+func BenchmarkMergeSort(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		MergeSort(nums)
+	}
+}
+func BenchmarkRadixSort(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		RadixSort(nums)
+	}
+}
+func BenchmarkStandardSort(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt1000()
+		b.StartTimer()
+		sort.Ints(nums)
+	}
+}
+
+func BenchmarkSelectSort20(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		SelectSort(nums)
+	}
+}
+func BenchmarkBubbleSort20(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		BubbleSort(nums)
+	}
+}
+
+func BenchmarkInsertSort20(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		InsertSort(nums)
+	}
+}
+
+func BenchmarkTwBubbleSort20(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		TwBubbleSort(nums)
+	}
+}
+
+func BenchmarkTwsBubbleSort20(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		TwsBubbleSort(nums)
+	}
+}
+
+func BenchmarkBinInsertSort20(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		BinInsertSort(nums)
+	}
+}
+
+func BenchmarkHeapSort20(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		HeapSort(nums)
+	}
+}
+
+func BenchmarkQuickSort20(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		QuickSort(nums)
+	}
+}
+func BenchmarkMergeSort20(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		MergeSort(nums)
+	}
+}
+func BenchmarkRadixSort20(b *testing.B) {
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		RadixSort(nums)
+	}
+}
+func BenchmarkStandardSort20(b *testing.B) {
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+
+		b.StopTimer()
+		nums := RandomInt20()
+		b.StartTimer()
+		sort.Ints(nums)
+	}
+}
+
+```
+
+算法实现如下
+
+```go
+package sort
+
+import (
+	"math/rand"
+	"time"
+)
+
+// SelectSort 选择排序，每次选择一个元素放到正确位置
+// go语言的切片是一个引用类型，或者说一个复合类型，底层还是基础数组，如果底层的数组改变了，底层数组就和传进来的参数不同了。
+// 排序的过程中，底层参数没有变化，没有调用append之类，所以可以正常改变切片的值
+// 时间复杂度 O(n^2),空间复杂度O(1)
+func SelectSort(nums []int) {
+	numsLen := len(nums)
+	// 一个变量用于保存最小值的下标
+	minIndex := 0
+	// 数组为空的情况不会进入循环，所以不用特殊处理
+	for i := 0; i < numsLen-1; i++ {
+		for j := i + 1; j < numsLen; j++ {
+			if nums[j] < nums[minIndex] {
+				minIndex = j
+			}
+		}
+		nums[minIndex], nums[i] = nums[i], nums[minIndex]
+		// 重置最小值下标为下一个
+		minIndex = i + 1
+	}
+}
+
+// BubbleSort 冒泡排序,交换不合次序的元素，直到列表中不存在这种元素为止
+// 时间复杂度 O(n^2),空间复杂度O(1)
+func BubbleSort(nums []int) {
+	numsLen := len(nums)
+	for i := 0; i < numsLen; i++ {
+		// 用一个标记判断是否完成排序，如果遍历一遍没有要交换的数据，说明已经排好序了
+		isSorted := true
+		for j := 0; j < numsLen-i-1; j++ {
+			if nums[j] > nums[j+1] {
+				nums[j], nums[j+1] = nums[j+1], nums[j]
+				isSorted = false
+			}
+		}
+		if isSorted {
+			break
+		}
+	}
+}
+
+// TwBubbleSort 即 Two Way ，双向冒泡算法
+// 冒泡算法可以进行改进，也就是所谓的双向冒泡排序
+// 先从左到右确定一个冒泡最大值，再从右到左冒泡一个最小值
+func TwBubbleSort(nums []int) {
+	numsLen := len(nums)
+	for i := 0; i < numsLen; i++ {
+		// 用一个标记判断是否完成排序，如果遍历一遍没有要交换的数据，说明已经排好序了
+		isSorted := true
+		for j := 0; j < numsLen-i-1; j++ {
+			if nums[j] > nums[j+1] {
+				nums[j], nums[j+1] = nums[j+1], nums[j]
+				isSorted = false
+			}
+		}
+		for j := numsLen - i - 2; j >= 1; j-- {
+			if nums[j] < nums[j-1] {
+				nums[j], nums[j-1] = nums[j-1], nums[j]
+				isSorted = false
+			}
+		}
+		if isSorted {
+			break
+		}
+	}
+}
+
+// HeapSort 用自己写的最大堆实现堆排序
+/*"../Heap/maxheap"
+func HeapSort(nums []int) {
+	numsLen := len(nums)
+	mh := maxheap.NewWithCopy(nums)
+
+	for i := 0; i < numsLen-1; i++ {
+		mh.Pop()
+	}
+}
+*/
+
+// down算法，用于建堆，还有删除头部后的调整工作
+func down(nums []int, nodeIndex int, len int) {
+	for {
+		// leftChild:=2*n+1
+		// 先假设要交换的是左子节点
+		changeChild := 2*nodeIndex + 1
+
+		if changeChild >= len {
+			break
+		}
+		// 如果右子节点比左子节点大，要交换的节点是右子节点
+		if rightChild := changeChild + 1; rightChild < len && nums[rightChild] > nums[changeChild] {
+			changeChild = rightChild
+		}
+		// 如果头部大于最大的子节点，那么就不用继续交换了，这是退出条件
+		if nums[nodeIndex] >= nums[changeChild] {
+			break
+		}
+		nums[changeChild], nums[nodeIndex] = nums[nodeIndex], nums[changeChild]
+		nodeIndex = changeChild
+	}
+}
+
+// HeapSort 从零开始实现堆排序
+func HeapSort(nums []int) {
+	numsLen := len(nums)
+	// heapify 在数组上建堆
+	for i := numsLen/2 - 1; i >= 0; i-- {
+		down(nums, i, numsLen)
+	}
+
+	// 需要一个元素记录堆的大小
+	heapSize := numsLen
+	// 建完堆后，是最大堆，所以数组开头是最大值，只需要不断取出最大值放到数组末尾即可
+	for j := 0; j < numsLen-1; j++ {
+		// 交换最大值,即头节点到尾部
+		nums[0], nums[numsLen-j-1] = nums[numsLen-j-1], nums[0]
+		// 已经交换到尾部的元素位置已经排好，从堆中移除，
+		heapSize--
+		// 此时头部可能变小，需要执行down操作，使结构满足最大堆
+		down(nums, 0, heapSize)
+	}
+}
+
+/*
+func TwBubbleSort(nums []int) {
+	numsLen := len(nums)
+	// 判断是否进行了交换的标志
+	isSwaped:=true
+	var i int
+	for isSwaped{
+		isSwaped = false
+        //自顶而下的扫描
+        for j := i;j < numsLem- i - 1;j++ {
+            if nums[j] > nums[j + 1] {
+                nums[j], nums[j + 1] = nums[j + 1], nums[j]
+                isSwaped = true
+            }
+        }
+
+        //自底而下的扫描
+        for j := numsLen - i - 1;j >= i + 1;j-- {
+            if nums[j] < nums[j - 1] {
+                nums[j], nums[j - 1] = nums[j - 1], nums[j]
+            }
+            isSwaped = true
+        }
+
+        i++
+	}
+}
+*/
+
+// TwsBubbleSort 在双向冒泡排序的基础上还可进行优化，因为一个循环在往左冒泡小的值，一个循环在往右冒泡大的值
+// 两轮循环分别确定一个最大值和最小值，所以未排序的部分就是中间的一部分，之前的算法，已经排序的部分会重复扫描
+// 我们可以设置两个位置标记，记录排序到的位置，这样每次扫描可以只扫中间的部分
+func TwsBubbleSort(nums []int) {
+	numsLen := len(nums)
+	left := 0
+	right := numsLen - 1
+	for i := 0; i < numsLen; i++ {
+		// 用一个标记判断是否完成排序，如果遍历一遍没有要交换的数据，说明已经排好序了
+		isSorted := true
+		for j := left; j < numsLen-i-1; j++ {
+			if nums[j] > nums[j+1] {
+				nums[j], nums[j+1] = nums[j+1], nums[j]
+				isSorted = false
+			}
+		}
+		right--
+		for j := right; j >= 1; j-- {
+			if nums[j] < nums[j-1] {
+				nums[j], nums[j-1] = nums[j-1], nums[j]
+				isSorted = false
+			}
+		}
+		left++
+		if isSorted {
+			break
+		}
+	}
+}
+
+// InsertSort 反复第插入新元素到已经排好序的列表之中，另插入后的列表也是有序的。
+// 但是在一个列表中操作，我们插入的时候需要先挪出位置，所以把插入点，到要插入的数据的位置，全部向后移一位
+// 另外从同一个数组中操作，插入的时候要确定插入的元素，这里方法来了，我们可以直接倒着遍历，往前插，这样往后挪位置的时候也方便
+// 时间复杂度O(n^2) 空间复杂度O(1)
+func InsertSort(nums []int) {
+	numsLen := len(nums)
+	// 每次插入确定一个位置
+	for i := 0; i < numsLen-1; i++ {
+		// 每次要插入的元素都是在已经插入完的后一位，从这位开始往前，如果能小于前面的就往前交换
+		for j := i + 1; j >= 1; j-- {
+			if nums[j] <= nums[j-1] {
+				nums[j], nums[j-1] = nums[j-1], nums[j]
+			}
+		}
+	}
+
+}
+
+// BinInsertSort 折半插入排序/二分插入排序，相比于插入排序，搜索插入位置的时候，使用了二分查找算法，而不是线性查找
+// 相较于普通插入排序，元素挪移的次数是一致的，只是减少了元素比较的次数。在元素个数n比较大时，效率提升才比较明显
+func BinInsertSort(nums []int) {
+	numsLen := len(nums)
+	// 每次插入确定一个位置
+	for i := 1; i < numsLen; i++ {
+		// 每次要插入的元素都是在已经插入完的后一位，从这位开始往前，如果能小于前面的就往前交换
+		tmp := nums[i]
+		low := 0
+		high := i
+		for low <= high {
+			mid := (low + high) / 2
+			if tmp > nums[mid] {
+				low = mid + 1
+			} else {
+				high = mid - 1
+			}
+		}
+
+		for j := i; j > low; j-- {
+			nums[j] = nums[j-1]
+		}
+		nums[low] = tmp
+
+	}
+
+}
+
+func quicksort(nums []int, first, last int) {
+	/*
+		numsLen := len(nums)
+		if numsLen <= 1 {
+			return
+		}*/
+	// 可以判断左右边界作为退出条件，如果first=last，说明只有一个元素
+	// fmt.Println(first, last)
+	if first >= last {
+		return
+	}
+	left := first
+	right := last
+	// 选取左边第一个元素作为基准值
+	pivot := nums[first]
+	for left < right {
+		// 在右边查找<=基准值的元素,最后right即保存了元素位置
+		for nums[right] > pivot {
+			right--
+		}
+		// 在左边查找>基准的元素
+		for left < right && nums[left] <= pivot {
+			left++
+		}
+		// 如果左右两个游标还没有碰头，交换两个元素
+		if left < right {
+			nums[left], nums[right] = nums[right], nums[left]
+		}
+	}
+	// 查找结束后，确定基准的位置,right查找的时候查找的是<=基准值的元素，所以最后会停在基准值位置
+	// pos := right
+	// 交换基准值和基准值位置所在的元素
+	nums[right], nums[first] = nums[first], nums[right]
+	quicksort(nums, first, right-1)
+	quicksort(nums, right+1, last)
+}
+
+// QuickSort 快速排序算法,选取一个基准值，用两个游标，分别从后往前遍历小于基准值的，从前往后遍历大于基准值的，交换这两个元素。
+// 如果两个游标相遇，说明整个列表已经遍历完了，并且可以得出游标的位置，再对游标左边的部分数组，和游标右边的部分数组执行一样的操作
+func QuickSort(nums []int) {
+	// fmt.Println(nums)
+	quicksort(nums, 0, len(nums)-1)
+}
+
+// 对两个有序数组执行的归并操作,其中mid是把数组区域分成两部分的下标,左半部分数组为l到mid，右半部分是mid+1到终点r
+func merge(nums []int, l, mid, r int) {
+	// 因为需要修改原数组nums的数据，复制一份left到right的数据，用于比较
+	tmpNums := make([]int, r-l+1)
+	for i := 0; i <= r-l; i++ {
+		tmpNums[i] = nums[i+l]
+	}
+	// 定义左右两个游标
+	left := l
+	right := mid + 1
+	for i := l; i <= r; i++ {
+		// 如果左边的游标超过终点，说明只剩右边的数值
+		if left > mid {
+			nums[i] = tmpNums[right-l]
+			right++
+			// 如果右边的游标超过终点，说明只剩左边的数值
+		} else if right > r {
+			nums[i] = tmpNums[left-l]
+			left++
+			// 左边的数据小于右边的数据，选左边的
+		} else if tmpNums[left-l] < tmpNums[right-l] {
+			nums[i] = tmpNums[left-l]
+			left++
+			// 剩下的情况是右边的数据比较小，选右边的
+		} else {
+			nums[i] = tmpNums[right-l]
+			right++
+		}
+	}
+}
+
+func mergesort(nums []int, l int, r int) {
+	if l >= r {
+		return
+	}
+	mid := (l + r) / 2
+	// 递归向下
+	mergesort(nums, l, mid)
+	mergesort(nums, mid+1, r)
+	// 归并向上
+	merge(nums, l, mid, r)
+}
+
+// MergeSort 归并排序,merge操作合并两个有序数组，mergesort归并排序，将一个数组不断二分直到只有两个元素，然后不断向上merge归并
+func MergeSort(nums []int) {
+	mergesort(nums, 0, len(nums)-1)
+}
+
+// RadixSort 基数排序，准备10个切片分别代表0-9，先按照末尾第一位把数组里的元素放到对应的切片里。然后按从左到右0-9，从下到上（也就是切片从左到右，下标从小到大）的顺序取出
+// 继续对下一位执行同一操作，那么我们拍好了后两位
+// 继续执行上述操作，知道把最大的位数执行完。
+func RadixSort(nums []int) {
+	numsLen := len(nums)
+	if numsLen <= 1 {
+		return
+	}
+	// 1.第一步，我们要获取数组中元素的最大位数
+	// 先得到数组中最大的元素
+	max := nums[0]
+	for i := 1; i < numsLen; i++ {
+		if nums[i] > max {
+			max = nums[i]
+		}
+	}
+	// 得到最大元素的位数
+	length := 0
+	for max != 0 {
+		max /= 10
+		length++
+	}
+	// fmt.Println(length)
+
+	// digit存储遍历的位数
+	for digit := 1; digit <= length; digit++ {
+		// 2. 准备10个切片数组，用于存放基数分别为0-9的元素
+		radix := make([][]int, 10)
+		for i := 0; i < 10; i++ {
+			// 初始化10个切片
+			radix[i] = []int{}
+		}
+		for i := 0; i < numsLen; i++ {
+			// 取遍历位的数字，先除以10，让要取的位变成最后位，然后用mod 10的方法取个位
+			digitNum := nums[i]
+			for j := 0; j < digit-1; j++ {
+				if digitNum == 0 {
+					break
+				}
+				digitNum /= 10
+			}
+			// fmt.Println(digitNum)
+			digitNum %= 10
+			// fmt.Println(digitNum)
+			// 按照这个位数上的数字放到对应的切片中
+			radix[digitNum] = append(radix[digitNum], nums[i])
+		}
+		// 再按左到右，从下到上的顺序取出,放回原数组
+		index := 0
+		for i := 0; i < 10; i++ {
+			for j := 0; j < len(radix[i]); j++ {
+				nums[index] = radix[i][j]
+				index++
+			}
+		}
+	}
+}
+
+// RandomInt1000 用于生成1000个随机Int的数组
+func RandomInt1000() (nums []int) {
+	nums = make([]int, 1000)
+	rand.Seed(time.Now().Unix())
+	for i := 0; i < len(nums); i++ {
+		nums[i] = rand.Intn(100000)
+	}
+	return
+}
+
+// RandomInt20 用于生成20个随机Int的数组
+func RandomInt20() (nums []int) {
+	nums = make([]int, 20)
+	rand.Seed(time.Now().Unix())
+	for i := 0; i < len(nums); i++ {
+		nums[i] = rand.Intn(1000)
+	}
+	return
+}
+
+```
+
+
+
+
+
+我们先执行1000个元素的长数组的benchmark，每个排序算法函数运行3秒
+
+命令行里面执行`go test -run=none --bench=.*Sort$ -benchtime="3s"`
+
+结果如图
+
+![1553443962098](assets/1553443962098.png)
+
+对于随机生成的1000个元素数组，随机范围100000.
+
+可见冒泡排序算法效率是最低的。优化后的冒泡算法效率高一些，接近选择排序。
+
+插入排序是几种基础排序中效率最高的。同时二分插入排序会更快一些。
+
+快速排序是所有这几种算法里最快的。
+
+归并排序，基数排序，快速排序，基数排序，这几种算法时间复杂度都是O(n log n)，时间相差不超过两倍。标准库里也是使用了一种O(n log n)的算法。其中基数排序和归并跑徐使用了额外的空间。
+
+
+
+随机生成20个元素数组，随机范围1000
+
+执行20个元素的短列表的性能测试，测试时间0.03秒。结果如下图
+
+命令行 ` go test -run=none --bench=.*20$ -benchtime="0.03s"`
+
+![1553445283421](assets/1553445283421.png)
+
+
+
+可以发现，快速排序的效率比较高。其次是基本排序中的插入排序。
+
+
+
+
+
+以上，测试的是无序数组的情况，下面我们测试一下部分有序的数组。只需要把随机数范围变得比数组大小小。那样必然会出现很多重复元素。
+
+设计了如下两个随机数数组生成函数
+
+```go
+// RandomInt1000s 用于生成100个随机Int的数组，随机范围100
+func RandomInt1000s() (nums []int) {
+	nums = make([]int, 1000)
+	rand.Seed(time.Now().Unix())
+	for i := 0; i < len(nums); i++ {
+		nums[i] = rand.Intn(100)
+	}
+	return
+}
+
+// RandomInt20s 用于生成20个随机Int的数组，随机范围5
+func RandomInt20s() (nums []int) {
+	nums = make([]int, 20)
+	rand.Seed(time.Now().Unix())
+	for i := 0; i < len(nums); i++ {
+		nums[i] = rand.Intn(5)
+	}
+	return
+}
+
+```
+
+首先是20个部分有序元素数组测试
+
+![1553445844148](assets/1553445844148.png)
+
+我们发现，在这种部分有序的短列表的情况下，普通的冒泡排序会快很多
+
+最快的还是插入排序 329ns/op和快速排序303ns/op
+
+
+
+再对1000个部分有序元素数组进行测试
+
+对于这种长数组，基本排序算法就没有优势了
+
+![1553446271833](assets/1553446271833.png)
+
+
+
+以上的测试还没有涵盖那种基本有序的数组。可能那才是比较常见的情况
+
+经过以上的测试，我们可以得出以下结论，
+
+快速排序基本都比较快。堆排序比较稳定。虽然对比快速排序偏慢。
+
+插入排序算法在短列表(n<=20)的情况下,效率比较高。而且在短列表的情况下，二分插入排序对比普通插入排序没有提高效率。但是在长列表的情况下效率提升比较高。
+
+归并排序适用于文件外排序。作为内排序对比堆排序和快速排序没有明显优势。可能再数组大部分有序的时候可以提高效率。
 
